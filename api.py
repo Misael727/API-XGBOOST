@@ -1,8 +1,13 @@
-import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import xgboost as xgb
+import pandas as pd
 from typing import List
+
+# Carrega o modelo treinado
+model = xgb.Booster()
+model.load_model("model.bin")
 
 app = FastAPI(title="API de Predição XGBoost")
 
@@ -24,30 +29,10 @@ class Payload(BaseModel):
 
 @app.post("/predict")
 def predict(payloads: List[Payload]):
-    url = "https://api.synapseia.tech/predict"
-    headers = {'Content-Type': 'application/json'}
-
-    # Converte o payload para o formato esperado pela API externa
-    data = [
-        {
-            "idade": p.idade,
-            "sexo": p.sexo,
-            "classificacao_risco": p.classificacao_risco,
-            "tempo_espera": p.tempo_espera,
-            "qtd_exames": p.qtd_exames
-        }
-        for p in payloads
-    ]
-    
+    df = pd.DataFrame([p.dict() for p in payloads])
+    dmat = xgb.DMatrix(df)
     try:
-        # Envia os dados para a API de predição externa
-        response = requests.post(url, json=data, headers=headers)
-
-        # Verifica se a resposta foi bem-sucedida
-        if response.status_code == 200:
-            return {"predictions": response.json()["predictions"]}
-        else:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-    
+        preds = model.predict(dmat)
+        return {"predictions": preds.tolist()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
